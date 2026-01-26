@@ -1,124 +1,89 @@
 #include "spynet.h"
-
-void allocate_grid(Game *g) {
-    g->grid = (char **)malloc(g ->size * sizeof(char *));
-    for (int i = 0; i < g ->size; i++) {
-        g ->grid[i] = (char *)malloc(g->size * sizeof(char));
-        for (int j = 0; j < g ->size; j++) {
-            g ->grid[i][j] = EMPTY_SYMBOL;
+ 
+int main() {
+    int n, num_players, turn = 0, gameRunning = 1, turnCount = 1;
+    char moveInput;
+    FILE *logFile;
+ 
+    printf("--- SpyNet: The Codebreaker Protocol ---\n");
+    
+    printf("Enter grid size (%d-%d): ", MIN_N, MAX_N);
+    if (scanf("%d", &n) != 1 || n < MIN_N || n > MAX_N) return 1;
+ 
+    printf("Select Game Mode (1, 2, or 3 players): ");
+    if (scanf("%d", &num_players) != 1 || num_players < 1 || num_players > MAX_PLAYERS) return 1;
+ 
+    srand((unsigned int)time(NULL));
+    char **grid = createGrid(n);
+    initGrid(grid, n);
+    placeItems(grid, n);
+ 
+    Player players[MAX_PLAYERS] = {
+        {0, 0, 3, 0, 1, '@'},           
+        {n - 1, n - 1, 3, 0, 1, '&'},   
+        {0, n - 1, 3, 0, 1, '$'}        
+    };
+    setupPlayers(grid, n, players, num_players);
+ 
+    logFile = fopen("game_log.txt", "w");
+    if (logFile == NULL) return 1;
+ 
+    while (gameRunning) {
+        Player *p = &players[turn];
+ 
+        if (p->active) {
+            displayGrid(grid, n);
+            printf("Player %c | Lives: %d | Intel: %d/%d\n", 
+                   p->symbol, p->lives, p->intel, INTEL_REQUIRED);
+            printf("Move (WASD) or Q to quit: ");
+            
+            // 1. Read the first character
+            scanf(" %c", &moveInput); 
+            
+            // 2. Clear the buffer (prevents "cheating" or accidental multi-moves)
+            int c;
+            while ((c = getchar()) != '\n' && c != EOF); 
+ 
+            if (moveInput == 'Q' || moveInput == 'q') {
+                grid[p->row][p->col] = '.';
+                p->active = 0;
+            } else {
+                int res = handleMove(grid, n, p, moveInput);
+                if (res == 0) {
+                    p->lives--;
+                    if (p->lives <= 0) {
+                        grid[p->row][p->col] = '.';
+                        p->active = 0;
+                    }
+                } else if (res == 2) {
+                    printf("\nMission Success: Player %c extracted!\n", p->symbol);
+                    gameRunning = 0;
+                } else if (res == 3) {
+                    printf("\nMission Failure: Player %c captured at extraction.\n", p->symbol);
+                    grid[p->row][p->col] = '.';
+                    p->active = 0;
+                }
+            }
+            logGameState(logFile, grid, n, players, num_players, turnCount++);
         }
-    }
-}
-
-void place_items(Game *g) {
-    int r, c;
-
-    g ->p1.row = rand() % g ->size;
-    g ->p1.col = rand() % g ->size;
-
-    do {
-        r = rand() % g ->size;
-        c = rand() % g ->size;
-    } while (r == g ->p1.row && c == g ->p1.col);
-    g ->grid[r][c] = EXTRACT_SYMBOL;
-
-    g ->total_intel = 3;
-    int placed_intel = 0;
-    while (placed_intel < g ->total_intel) {
-        r = rand() % g ->size;
-        c = rand() % g ->size;
-        if ((r != g ->p1.row || c != g ->p1.col) && g ->grid[r][c] == EMPTY_SYMBOL) {
-            g ->grid[r][c] = INTEL_SYMBOL;
-            placed_intel++;
+ 
+        int activeCount = 0, lastIdx = -1;
+        for (int i = 0; i < num_players; i++) {
+            if (players[i].active) { activeCount++; lastIdx = i; }
         }
-    }
-
-    int placed_lives = 0;
-    while (placed_lives < 2) {
-        r = rand() % g ->size;
-        c = rand() % g ->size;
-        if ((r != g ->p1.row || c != g ->p1.col) && g ->grid[r][c] == EMPTY_SYMBOL) {
-            g ->grid[r][c] = LIFE_SYMBOL;
-            placed_lives++;
+ 
+        if (activeCount == 0 && gameRunning) {
+            printf("\nGame Over: All agents neutralized.\n");
+            gameRunning = 0;
+        } else if (activeCount == 1 && num_players > 1 && gameRunning) {
+            printf("\nVictory: Player %c is the sole survivor!\n", players[lastIdx].symbol);
+            gameRunning = 0;
         }
+ 
+        turn = (turn + 1) % num_players;
     }
-
-    int num_walls = (g ->size * g ->size) * 0.15;
-    int placed_walls = 0;
-    while (placed_walls < num_walls) {
-        r = rand() % g ->size;
-        c = rand() % g ->size;
-        if ((r != g ->p1.row || c != g ->p1.col) && g ->grid[r][c] == EMPTY_SYMBOL) {
-            g ->grid[r][c] = WALL_SYMBOL;
-            placed_walls++;
-        }
-    }
+ 
+    fclose(logFile);
+    freeGrid(grid, n);
+    return 0;
 }
-
-void init_game(Game *g, int size) {
-    g ->size = size;
-    g ->game_over = 0;
-
-    g ->p1.lives = 3;
-    g ->p1.intel_collected = 0;
-    g ->p1.active = 1;
-
-    allocate_grid(g);
-    place_items(g);
-
-    log_move(g, '-', "Game Initialized");
-}
-
-void display_map(Game *g) {
-    printf("\n   ");
-    for (int k = 0; k < g ->size; k++) printf("---");
-    printf("\n");
-
-    for (int i = 0; i < g ->size; i++) {
-        printf(" | ");
-        for (int j = 0; j < g ->size; j++) {
-            if (i == g ->p1.row && j == g ->p1.col)
-                printf("%c  ", PLAYER_SYMBOL);
-            else
-                printf("%c  ", g ->grid[i][j]);
-        }
-        printf("|\n");
-    }
-
-    printf("   ");
-    for (int k = 0; k < g ->size; k++) printf("---");
-    printf("\n");
-
-    printf("Stats -> Lives: %d | Intel: %d/%d\n",
-           g ->p1.lives, g ->p1.intel_collected, g ->total_intel);
-}
-
-void log_move(Game *g, char move, const char *message) {
-    FILE *fp = fopen("spynet_log.txt", "a");
-    if (fp == NULL) return;
-
-    fprintf(fp, "Move: %c | %s\n", move, message);
-    fprintf(fp, "Stats: Lives=%d, Intel=%d/%d\n",
-            g ->p1.lives, g ->p1.intel_collected, g ->total_intel);
-
-    for (int i = 0; i < g ->size; i++) {
-        for (int j = 0; j < g ->size; j++) {
-            if (i == g ->p1.row && j == g ->p1.col)
-                fprintf(fp, "%c ", PLAYER_SYMBOL);
-            else
-                fprintf(fp, "%c ", g ->grid[i][j]);
-        }
-        fprintf(fp, "\n");
-    }
-    fprintf(fp, "-----------------------------\n");
-    fclose(fp);
-}
-
-int is_valid_move(Game *g, int r, int c) {
-    if (r < 0 || r >= g ->size || c < 0 || c >= g ->size)
-        return 0;
-    if (g ->grid[r][c] == WALL_SYMBOL)
-        return 0;
-    return 1;
-}
-
