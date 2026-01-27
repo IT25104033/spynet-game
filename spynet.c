@@ -1,7 +1,19 @@
 #include "spynet.h"
+
+//display player stats
+void displayGrid(char **grid, int n, Player players[], int num_players) {
+    printf("\n=== FIELD STATUS ===\n");
+  
+    for (int i = 0; i < num_players; i++) {
+        if (players[i].active) {
+            printf("Player %c | Pos: (%d,%d) | Lives: %d | Intel: %d/%d\n", players[i].symbol, players[i].row, players[i].col, players[i].lives, players[i].intel, INTEL_REQUIRED);
+
+        } else {
+            printf("Player %c | OFFLINE\n", players[i].symbol);
+        }
+    }
+    printf("====================\n");
  
-void displayGrid(char **grid, int n) {
-    printf("\n");
     for (int i = 0; i < n; i++) {
         for (int j = 0; j < n; j++) {
             printf("%c ", grid[i][j]);
@@ -9,13 +21,12 @@ void displayGrid(char **grid, int n) {
         printf("\n");
     }
 }
- 
+
+//record the moves in game_log
 void logGameState(FILE *fp, char **grid, int n, Player players[], int num_players, int turnCount) {
     fprintf(fp, "RECORD #%d\n", turnCount);
     for (int i = 0; i < num_players; i++) {
-        fprintf(fp, "P%c: %s | L:%d I:%d\n", 
-                players[i].symbol, players[i].active ? "ACTIVE" : "OUT",
-                players[i].lives, players[i].intel);
+        fprintf(fp, "P%c: %s | L:%d I:%d\n", players[i].symbol, players[i].active ? "ACTIVE" : "OUT",players[i].lives, players[i].intel);
     }
     for (int i = 0; i < n; i++) {
         for (int j = 0; j < n; j++) fprintf(fp, "%c ", grid[i][j]);
@@ -24,23 +35,27 @@ void logGameState(FILE *fp, char **grid, int n, Player players[], int num_player
     fprintf(fp, "--------------------------------\n\n");
     fflush(fp);
 }
- 
+
+//dynamic memory allocation for grid
 char **createGrid(int n) {
     char **g = malloc(n * sizeof(char *));
     for (int i = 0; i < n; i++) g[i] = malloc(n * sizeof(char));
     return g;
 }
- 
+
+//cleans memory before exit
 void freeGrid(char **grid, int n) {
     for (int i = 0; i < n; i++) free(grid[i]);
     free(grid);
 }
- 
+
+//fill the grid with .
 void initGrid(char **grid, int n) {
     for (int i = 0; i < n; i++)
         for (int j = 0; j < n; j++) grid[i][j] = '.';
 }
- 
+
+//randomly places #,I,L,X
 void placeItems(char **grid, int n) {
     char items[] = {'#', 'I', 'L', 'X'};
     int counts[] = {n, 3, 2, 1}; 
@@ -55,11 +70,13 @@ void placeItems(char **grid, int n) {
         }
     }
 }
- 
+
+//put player symbol in starting point
 void setupPlayers(char **grid, int n, Player players[], int num_players) {
     for (int i = 0; i < num_players; i++) grid[players[i].row][players[i].col] = players[i].symbol;
 }
- 
+
+//movement and item collection
 int handleMove(char **grid, int n, Player *p, char move) {
     int nr = p->row, nc = p->col;
     if (move == 'W' || move == 'w') nr--;
@@ -78,5 +95,27 @@ int handleMove(char **grid, int n, Player *p, char move) {
     grid[p->row][p->col] = '.';
     p->row = nr; p->col = nc;
     grid[nr][nc] = p->symbol;
+    return 1;
+}
+
+//basic AI
+int handleComputerMove(char **grid, int n, Player *p) {
+    char moves[] = {'W', 'A', 'S', 'D'};
+    int attempts = 0;
+    
+    while (attempts < 10) {
+        char move = moves[rand() % 4];
+        int nr = p->row, nc = p->col;
+        
+        if (move == 'W') nr--;
+        else if (move == 'S') nr++;
+        else if (move == 'A') nc--;
+        else if (move == 'D') nc++;
+        
+        if (nr >= 0 && nr < n && nc >= 0 && nc < n && grid[nr][nc] != '#') {
+            return handleMove(grid, n, p, move);
+        }
+        attempts++;
+    }
     return 1;
 }

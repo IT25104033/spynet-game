@@ -2,17 +2,29 @@
  
 int main() {
     int n, num_players, turn = 0, gameRunning = 1, turnCount = 1;
+    int is_bot[MAX_PLAYERS] = {0, 0, 0}; 
     char moveInput;
     FILE *logFile;
- 
+
+    //setup and menu
     printf("--- SpyNet: The Codebreaker Protocol ---\n");
     
     printf("Enter grid size (%d-%d): ", MIN_N, MAX_N);
     if (scanf("%d", &n) != 1 || n < MIN_N || n > MAX_N) return 1;
  
-    printf("Select Game Mode (1, 2, or 3 players): ");
+    printf("Select Number of Players (1, 2, or 3): ");
     if (scanf("%d", &num_players) != 1 || num_players < 1 || num_players > MAX_PLAYERS) return 1;
  
+    if (num_players > 1) {
+        printf("Select Mode:\n1. Human vs Human\n2. Human vs Computer\nEnter choice: ");
+        int modeChoice;
+        scanf("%d", &modeChoice);
+        if (modeChoice == 2) {
+            for (int i = 1; i < num_players; i++) is_bot[i] = 1;
+        }
+    }
+
+    //start grid
     srand((unsigned int)time(NULL));
     char **grid = createGrid(n);
     initGrid(grid, n);
@@ -26,57 +38,66 @@ int main() {
     setupPlayers(grid, n, players, num_players);
  
     logFile = fopen("game_log.txt", "w");
-    if (logFile == NULL) return 1;
- 
+
+    //main game loop
     while (gameRunning) {
         Player *p = &players[turn];
  
         if (p->active) {
-            displayGrid(grid, n);
-            printf("Player %c | Lives: %d | Intel: %d/%d\n", 
-                   p->symbol, p->lives, p->intel, INTEL_REQUIRED);
-            printf("Move (WASD) or Q to quit: ");
+            displayGrid(grid, n, players, num_players);
+            printf("\n>>> YOUR TURN: Agent %c %s\n", p->symbol, is_bot[turn] ? "(AI)" : "");
             
-            // 1. Read the first character
-            scanf(" %c", &moveInput); 
-            
-            // 2. Clear the buffer (prevents "cheating" or accidental multi-moves)
-            int c;
-            while ((c = getchar()) != '\n' && c != EOF); 
- 
-            if (moveInput == 'Q' || moveInput == 'q') {
-                grid[p->row][p->col] = '.';
-                p->active = 0;
+            int res;
+            if (is_bot[turn]) {
+                printf("AI calculating move...\n");
+                res = handleComputerMove(grid, n, p);
             } else {
-                int res = handleMove(grid, n, p, moveInput);
-                if (res == 0) {
-                    p->lives--;
-                    if (p->lives <= 0) {
-                        grid[p->row][p->col] = '.';
-                        p->active = 0;
-                    }
-                } else if (res == 2) {
-                    printf("\nMission Success: Player %c extracted!\n", p->symbol);
-                    gameRunning = 0;
-                } else if (res == 3) {
-                    printf("\nMission Failure: Player %c captured at extraction.\n", p->symbol);
+                printf("Enter move (W/A/S/D) or Q to quit: ");
+                scanf(" %c", &moveInput);
+                int c; while ((c = getchar()) != '\n' && c != EOF); //clear input buffer
+ 
+                if (moveInput == 'Q' || moveInput == 'q') {
                     grid[p->row][p->col] = '.';
                     p->active = 0;
+                    res = 1;
+                } else {
+                    res = handleMove(grid, n, p, moveInput);
                 }
+            }
+ 
+            //results
+            if (res == 0) {
+                p->lives--;
+                printf("CRITICAL: Collision detected! Lives remaining: %d\n", p->lives);
+                if (p->lives <= 0) { 
+                    printf("Agent %c has been neutralized.\n", p->symbol);
+                    grid[p->row][p->col] = '.'; 
+                    p->active = 0; 
+                }
+            } else if (res == 2) {
+                displayGrid(grid, n, players, num_players);
+                printf("\nSUCCESS: Agent %c extracted successfully!\n", p->symbol);
+                gameRunning = 0;
+            } else if (res == 3) {
+                printf("\nFAILURE: Agent %c attempted extraction without Intel.\n", p->symbol);
+                grid[p->row][p->col] = '.'; 
+                p->active = 0;
             }
             logGameState(logFile, grid, n, players, num_players, turnCount++);
         }
  
-        int activeCount = 0, lastIdx = -1;
+        
+        int activeCount = 0;
+        int lastIdx = -1;
         for (int i = 0; i < num_players; i++) {
             if (players[i].active) { activeCount++; lastIdx = i; }
         }
  
         if (activeCount == 0 && gameRunning) {
-            printf("\nGame Over: All agents neutralized.\n");
+            printf("\nGAME OVER: No active agents remaining.\n");
             gameRunning = 0;
-        } else if (activeCount == 1 && num_players > 1 && gameRunning) {
-            printf("\nVictory: Player %c is the sole survivor!\n", players[lastIdx].symbol);
+        } else if (num_players > 1 && activeCount == 1 && gameRunning) {
+            printf("\nVICTORY: Agent %c is the last one on the field!\n", players[lastIdx].symbol);
             gameRunning = 0;
         }
  
@@ -87,3 +108,4 @@ int main() {
     freeGrid(grid, n);
     return 0;
 }
+
